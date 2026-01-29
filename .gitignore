@@ -1,0 +1,101 @@
+# ============================================
+# NLP-Final-Project-Chatbot-CS .gitignore
+# ============================================
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environments
+venv/
+env/
+ENV/
+.env/
+.venv/
+virtualenv/
+virtualenvs/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# OS
+Thumbs.db
+desktop.ini
+
+# Large binary files (DLLs, models, etc.)
+*.dll
+*.pyd
+*.exe
+*.bin
+*.pt
+*.pth
+*.h5
+*.hdf5
+*.onnx
+
+# Whisper cache and models
+.cache/
+.cache/huggingface/
+.cache/whisper/
+*.bin
+*.safetensors
+
+# Data files
+*.csv
+*.pkl
+*.pickle
+*.joblib
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+*.log
+logs/
+
+# Test files
+test_*.py
+*_test.py
+*.test
+
+# Streamlit cache
+.streamlit/
+
+# Jupyter Notebooks
+*.ipynb
+.ipynb_checkpoints/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Project specific
+last_transcription.txt
+test_recording.wav
+test_audio.wav
+test_transcription.txt
