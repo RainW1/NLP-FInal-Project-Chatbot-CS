@@ -99,3 +99,10 @@ last_transcription.txt
 test_recording.wav
 test_audio.wav
 test_transcription.txt
+
+# Project specific
+last_transcription.txt
+test_recording.wav
+test_audio.wav
+test_transcription.txt
+*.txt  # Atau tambah ini untuk semua file text test
