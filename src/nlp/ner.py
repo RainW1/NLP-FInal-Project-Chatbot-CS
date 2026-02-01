@@ -72,106 +72,65 @@ PATTERNS = {
 
 
 # ============================================================
-# NER MODEL LOADING (with caching)
-# ============================================================
-
-_NER_MODEL_CACHE = None
-
-def _get_ner_model():
-    """
-    Load and cache NER model for entity extraction.
-    Uses Indonesian BERT NER model.
-    
-    Returns:
-        NER pipeline or None if model loading fails
-    """
-    global _NER_MODEL_CACHE
-    
-    if _NER_MODEL_CACHE is not None:
-        return _NER_MODEL_CACHE
-    
-    try:
-        from transformers import pipeline
-        
-        # Try to load Indonesian NER model
-        try:
-            _NER_MODEL_CACHE = pipeline(
-                "ner",
-                model="cahya/bert-base-indonesian-NER",
-                aggregation_strategy="simple"  # Groups entities together
-            )
-            print("✅ Loaded Indonesian NER model: cahya/bert-base-indonesian-NER")
-        except Exception as e:
-            # Fallback to multilingual NER model
-            print(f"⚠️ Could not load Indonesian model, using multilingual: {e}")
-            _NER_MODEL_CACHE = pipeline(
-                "ner",
-                model="dslim/bert-base-NER",
-                aggregation_strategy="simple"
-            )
-            print("✅ Loaded fallback NER model: dslim/bert-base-NER")
-        
-        return _NER_MODEL_CACHE
-        
-    except Exception as e:
-        print(f"❌ Could not load NER model: {e}")
-        print("   Continuing with regex-only extraction...")
-        return None
-
-
-# ============================================================
 # STUB IMPLEMENTATION - Replace with real code!
 # ============================================================
 
 def extract_entities(text: str) -> Entities:
     """
-    Extracts entities using hybrid approach: Indonesian BERT NER + regex patterns.
+    STUB: Extracts entities using regex patterns.
     
-    Args:
-        text: User message (string)
+    TODO (Person C):
+    1. Use pre-trained NER model for general entities
+    2. Combine with regex for e-commerce specific patterns
+    3. Post-process and validate extracted entities
+    
+    Real implementation example:
+    ```python
+    from transformers import pipeline
+    
+    # Load NER model
+    ner_model = pipeline("ner", model="dslim/bert-base-NER", grouped_entities=True)
+    
+    def extract_entities(text: str) -> Entities:
+        entities = Entities()
         
-    Returns:
-        Entities object with extracted information
+        # Use regex for specific patterns (more reliable for IDs, amounts)
+        entities.order_id = extract_with_regex(text, PATTERNS["order_id"])
+        entities.amount = extract_with_regex(text, PATTERNS["amount"])
+        entities.date = extract_with_regex(text, PATTERNS["duration"] + PATTERNS["date"])
+        
+        # Use NER model for general entities (names, products)
+        ner_results = ner_model(text)
+        for entity in ner_results:
+            if entity['entity_group'] == 'PER':
+                entities.person_name = entity['word']
+            elif entity['entity_group'] == 'MISC':
+                # Could be product name
+                entities.product_name = entity['word']
+        
+        # Product name heuristics (common e-commerce products)
+        entities.product_name = extract_product_name(text)
+        
+        return entities
+    ```
     """
     entities = Entities()
     
-    # 1. Extract structured entities with regex (more reliable for IDs, amounts, dates)
+    # Extract order ID
     entities.order_id = _extract_with_patterns(text, PATTERNS["order_id"])
+    
+    # Extract amount
     entities.amount = _extract_with_patterns(text, PATTERNS["amount"])
+    
+    # Extract duration/date
     date_patterns = PATTERNS["duration"] + PATTERNS["date"]
     entities.date = _extract_with_patterns(text, date_patterns)
     
-    # 2. Try to use NER model for person names and products (if model is available)
-    try:
-        ner_model = _get_ner_model()
-        if ner_model:
-            ner_results = ner_model(text)
-            
-            # Process NER results
-            for entity in ner_results:
-                entity_type = entity.get('entity_group', entity.get('entity', ''))
-                entity_text = entity.get('word', entity.get('text', ''))
-                
-                # Person names
-                if entity_type in ['PER', 'PERSON', 'B-PER', 'I-PER'] and not entities.person_name:
-                    entities.person_name = entity_text.strip()
-                
-                # Products/Organizations (might be product names)
-                elif entity_type in ['ORG', 'MISC', 'PRODUCT', 'B-ORG', 'B-MISC'] and not entities.product_name:
-                    # Only use if it looks like a product name
-                    if any(keyword in entity_text.lower() for keyword in ['iphone', 'samsung', 'laptop', 'sepatu', 'tas', 'baju']):
-                        entities.product_name = entity_text.strip()
-    except Exception as e:
-        # If NER model fails, continue with regex-only approach
-        pass
+    # Extract product name (simple heuristic - improve with NER model!)
+    entities.product_name = _extract_product_name(text)
     
-    # 3. Fallback: Extract product name using regex patterns
-    if not entities.product_name:
-        entities.product_name = _extract_product_name(text)
-    
-    # 4. Fallback: Extract person name using regex patterns
-    if not entities.person_name:
-        entities.person_name = _extract_person_name(text)
+    # Extract person name (simple heuristic - improve with NER model!)
+    entities.person_name = _extract_person_name(text)
     
     return entities
 

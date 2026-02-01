@@ -31,65 +31,45 @@ from interfaces import Message
 from typing import List, Dict
 
 # ============================================================
-# SUMMARIZATION MODEL LOADING (with caching)
+# STUB IMPLEMENTATION - Replace with real code!
 # ============================================================
-
-_SUMMARIZATION_MODEL_CACHE = None
-
-def _get_summarization_model():
-    """
-    Load and cache BART summarization model.
-    
-    Returns:
-        Summarization pipeline or None if loading fails
-    """
-    global _SUMMARIZATION_MODEL_CACHE
-    
-    if _SUMMARIZATION_MODEL_CACHE is not None:
-        return _SUMMARIZATION_MODEL_CACHE
-    
-    try:
-        from transformers import pipeline
-        
-        # Use BART for summarization (good quality, reasonable speed)
-        _SUMMARIZATION_MODEL_CACHE = pipeline(
-            "summarization",
-            model="facebook/bart-large-cnn",
-            device=-1  # Use CPU
-        )
-        print("✅ Loaded BART summarization model: facebook/bart-large-cnn")
-        return _SUMMARIZATION_MODEL_CACHE
-        
-    except Exception as e:
-        print(f"❌ Could not load summarization model: {e}")
-        print("   Falling back to rule-based summarization...")
-        return None
-
-
-def _detect_language(text: str) -> str:
-    """
-    Simple language detection based on common words.
-    Returns 'id' for Indonesian or 'en' for English.
-    """
-    indonesian_keywords = ['saya', 'yang', 'dengan', 'untuk', 'adalah', 'belum', 'sudah', 'mau', 'bisa']
-    english_keywords = ['the', 'is', 'are', 'my', 'have', 'has', 'can', 'please', 'order']
-    
-    text_lower = text.lower()
-    indo_count = sum(1 for word in indonesian_keywords if word in text_lower)
-    eng_count = sum(1 for word in english_keywords if word in text_lower)
-    
-    return 'id' if indo_count > eng_count else 'en'
-
 
 def summarize_conversation(messages: List[Message]) -> str:
     """
-    Summarizes conversation history using BART model.
+    STUB: Summarizes conversation history.
     
-    Args:
-        messages: List of Message objects (full conversation)
+    TODO (Person C):
+    1. Load summarization model (BART or PEGASUS)
+    2. Format conversation into summarizable text
+    3. Generate summary
+    4. Post-process (clean, truncate if needed)
+    
+    Real implementation example:
+    ```python
+    from transformers import pipeline
+    
+    summarizer = pipeline("summarization", model="facebook/bart-large-cnn")
+    
+    def summarize_conversation(messages: List[Message]) -> str:
+        # Format conversation
+        conversation_text = ""
+        for msg in messages:
+            role = "Pelanggan" if msg.role == "user" else "CS"
+            conversation_text += f"{role}: {msg.content}\\n"
         
-    Returns:
-        Summary string (2-3 sentences)
+        # Generate summary
+        if len(conversation_text) < 50:  # Too short to summarize
+            return "Percakapan terlalu singkat untuk dirangkum."
+        
+        result = summarizer(
+            conversation_text,
+            max_length=100,
+            min_length=30,
+            do_sample=False
+        )
+        
+        return result[0]["summary_text"]
+    ```
     """
     if not messages:
         return "Tidak ada percakapan untuk dirangkum."
@@ -97,98 +77,50 @@ def summarize_conversation(messages: List[Message]) -> str:
     if len(messages) < 2:
         return "Percakapan terlalu singkat untuk dirangkum."
     
-    # Detect language from first user message
-    user_messages_sample = [m.content for m in messages if m.role == "user"][:3]
-    sample_text = " ".join(user_messages_sample)
-    language = _detect_language(sample_text)
+    # STUB - Simple extractive summary based on keywords
+    # Replace with real model!
     
-    # Format conversation into text with appropriate role names
-    conversation_text = ""
-    for msg in messages:
-        if language == 'id':
-            role = "Pelanggan" if msg.role == "user" else "Customer Service"
-        else:
-            role = "Customer" if msg.role == "user" else "Customer Service"
-        conversation_text += f"{role}: {msg.content}\n"
-    
-    # Try to use BART model
-    try:
-        summarizer = _get_summarization_model()
-        
-        if summarizer and len(conversation_text) >= 50:
-            # BART works best with text between 100-1024 tokens
-            # Truncate if too long
-            max_input_length = 1000
-            if len(conversation_text) > max_input_length:
-                conversation_text = conversation_text[:max_input_length]
-            
-            result = summarizer(
-                conversation_text,
-                max_length=100,
-                min_length=30,
-                do_sample=False,
-                truncation=True
-            )
-            
-            return result[0]["summary_text"]
-    except Exception as e:
-        print(f"⚠️ Summarization model failed: {e}")
-        print("   Using fallback rule-based summary...")
-    
-    # Fallback: Rule-based summarization with bilingual support
+    # Analyze conversation
     user_messages = [m.content for m in messages if m.role == "user"]
     bot_messages = [m.content for m in messages if m.role == "assistant"]
     
-    # Extract order IDs
+    # Extract key information
+    topics = []
+    if any("belum sampai" in m.lower() or "terlambat" in m.lower() for m in user_messages):
+        topics.append("keterlambatan pengiriman")
+    if any("rusak" in m.lower() or "cacat" in m.lower() for m in user_messages):
+        topics.append("produk rusak/cacat")
+    if any("refund" in m.lower() or "return" in m.lower() for m in user_messages):
+        topics.append("permintaan refund/return")
+    if any("status" in m.lower() or "tracking" in m.lower() for m in user_messages):
+        topics.append("pengecekan status pesanan")
+    
+    # Extract order ID if mentioned
     import re
     order_ids = []
     for m in user_messages:
         matches = re.findall(r'ORDER[-]?\d+|ORD[-]?\d+|#\d{6,}', m, re.IGNORECASE)
         order_ids.extend(matches)
     
-    # Detect topics based on keywords (bilingual)
-    topics = []
-    
-    # Delivery delay
-    if any(word in " ".join(user_messages).lower() for word in ["belum sampai", "terlambat", "hasn't arrived", "delayed", "late"]):
-        topics.append("keterlambatan pengiriman" if language == 'id' else "delivery delay")
-    
-    # Damaged product
-    if any(word in " ".join(user_messages).lower() for word in ["rusak", "cacat", "broken", "damaged", "defective"]):
-        topics.append("produk rusak/cacat" if language == 'id' else "damaged/defective product")
-    
-    # Refund/Return
-    if any(word in " ".join(user_messages).lower() for word in ["refund", "return", "tukar", "kembali"]):
-        topics.append("permintaan refund/return" if language == 'id' else "refund/return request")
-    
-    # Status/Tracking
-    if any(word in " ".join(user_messages).lower() for word in ["status", "tracking", "cek", "check"]):
-        topics.append("pengecekan status pesanan" if language == 'id' else "order status inquiry")
-    
-    # Build summary based on language
+    # Build summary
     summary_parts = []
     
-    if language == 'id':
-        summary_parts.append(f"Percakapan dengan {len(messages)} pesan.")
-        if topics:
-            summary_parts.append(f"Pelanggan menghubungi terkait {', '.join(topics)}.")
-        else:
-            summary_parts.append("Pelanggan menghubungi untuk bertanya.")
-        if order_ids:
-            summary_parts.append(f"Nomor pesanan yang disebutkan: {', '.join(set(order_ids))}.")
-        if any("terima kasih" in m.lower() or "thanks" in m.lower() for m in user_messages):
-            summary_parts.append("Pelanggan mengucapkan terima kasih (kemungkinan terselesaikan).")
+    # Opening
+    summary_parts.append(f"Percakapan dengan {len(messages)} pesan.")
+    
+    # Main topic
+    if topics:
+        summary_parts.append(f"Pelanggan menghubungi terkait {', '.join(topics)}.")
     else:
-        # English fallback
-        summary_parts.append(f"Conversation with {len(messages)} messages.")
-        if topics:
-            summary_parts.append(f"Customer contacted regarding {', '.join(topics)}.")
-        else:
-            summary_parts.append("Customer contacted with a question.")
-        if order_ids:
-            summary_parts.append(f"Order number(s) mentioned: {', '.join(set(order_ids))}.")
-        if any("terima kasih" in m.lower() or "thank" in m.lower() for m in user_messages):
-            summary_parts.append("Customer expressed thanks (likely resolved).")
+        summary_parts.append("Pelanggan menghubungi untuk bertanya.")
+    
+    # Order ID
+    if order_ids:
+        summary_parts.append(f"Nomor pesanan yang disebutkan: {', '.join(set(order_ids))}.")
+    
+    # Resolution status (simple heuristic)
+    if any("terima kasih" in m.lower() or "thanks" in m.lower() for m in user_messages):
+        summary_parts.append("Pelanggan mengucapkan terima kasih (kemungkinan terselesaikan).")
     
     return " ".join(summary_parts)
 
@@ -228,209 +160,95 @@ def summarize_with_model(text: str, model_name: str = "bart") -> Dict:
 # MODEL COMPARISON
 # ============================================================
 
-_MODEL_COMPARISON_CACHE = {"bart": None, "pegasus": None}
-
-def _load_comparison_models():
-    """
-    Load both BART and PEGASUS models for comparison.
-    
-    Returns:
-        Dict with 'bart' and 'pegasus' pipelines
-    """
-    global _MODEL_COMPARISON_CACHE
-    
-    # Load BART if not cached
-    if _MODEL_COMPARISON_CACHE["bart"] is None:
-        try:
-            from transformers import pipeline
-            _MODEL_COMPARISON_CACHE["bart"] = pipeline(
-                "summarization",
-                model="facebook/bart-large-cnn",
-                device=-1
-            )
-            print("✅ Loaded BART for comparison: facebook/bart-large-cnn")
-        except Exception as e:
-            print(f"❌ Could not load BART: {e}")
-    
-    # Load PEGASUS if not cached
-    if _MODEL_COMPARISON_CACHE["pegasus"] is None:
-        try:
-            from transformers import pipeline
-            _MODEL_COMPARISON_CACHE["pegasus"] = pipeline(
-                "summarization",
-                model="google/pegasus-cnn_dailymail",
-                device=-1
-            )
-            print("✅ Loaded PEGASUS for comparison: google/pegasus-cnn_dailymail")
-        except Exception as e:
-            print(f"❌ Could not load PEGASUS: {e}")
-    
-    return _MODEL_COMPARISON_CACHE
-
-
 def compare_models(text_samples: List[str], reference_summaries: List[str] = None) -> Dict:
     """
-    Compares BART and PEGASUS summarization models on given samples.
+    STUB: Compares two summarization models.
     
-    Args:
-        text_samples: List of conversation texts to summarize
-        reference_summaries: Optional list of reference summaries for ROUGE calculation
-        
-    Returns:
-        Dict with comparison metrics (ROUGE scores, latency, etc.)
-    """
-    if not text_samples:
-        return {"error": "No text samples provided"}
+    TODO (Person C):
+    1. Load both models (BART and PEGASUS)
+    2. Run summarization on all samples
+    3. Calculate ROUGE scores if references available
+    4. Measure latency
+    5. Return comparison results
     
-    print(f"\n{'='*60}")
-    print(f"Starting Model Comparison: BART vs PEGASUS")
-    print(f"Number of samples: {len(text_samples)}")
-    print(f"{'='*60}\n")
+    Real implementation example:
+    ```python
+    from transformers import pipeline
+    from rouge_score import rouge_scorer
     
     # Load models
-    models = _load_comparison_models()
-    bart_model = models["bart"]
-    pegasus_model = models["pegasus"]
+    bart = pipeline("summarization", model="facebook/bart-large-cnn")
+    pegasus = pipeline("summarization", model="google/pegasus-cnn_dailymail")
     
-    # Initialize results
+    scorer = rouge_scorer.RougeScorer(['rouge1', 'rouge2', 'rougeL'])
+    
+    def compare_models(text_samples, reference_summaries=None):
+        results = {
+            "model_a": {"name": "BART", "summaries": [], "rouge_scores": [], "latencies": []},
+            "model_b": {"name": "PEGASUS", "summaries": [], "rouge_scores": [], "latencies": []}
+        }
+        
+        for i, text in enumerate(text_samples):
+            # BART
+            start = time.time()
+            bart_summary = bart(text, max_length=100)[0]["summary_text"]
+            results["model_a"]["latencies"].append((time.time() - start) * 1000)
+            results["model_a"]["summaries"].append(bart_summary)
+            
+            # PEGASUS
+            start = time.time()
+            pegasus_summary = pegasus(text, max_length=100)[0]["summary_text"]
+            results["model_b"]["latencies"].append((time.time() - start) * 1000)
+            results["model_b"]["summaries"].append(pegasus_summary)
+            
+            # Calculate ROUGE if references available
+            if reference_summaries:
+                bart_scores = scorer.score(reference_summaries[i], bart_summary)
+                pegasus_scores = scorer.score(reference_summaries[i], pegasus_summary)
+                results["model_a"]["rouge_scores"].append(bart_scores)
+                results["model_b"]["rouge_scores"].append(pegasus_scores)
+        
+        # Calculate averages
+        results["model_a"]["avg_latency"] = sum(results["model_a"]["latencies"]) / len(text_samples)
+        results["model_b"]["avg_latency"] = sum(results["model_b"]["latencies"]) / len(text_samples)
+        
+        return results
+    ```
+    """
+    # STUB - Return dummy comparison results
     results = {
         "model_a": {
             "name": "BART (facebook/bart-large-cnn)",
-            "summaries": [],
-            "latencies": [],
-            "rouge_scores": []
+            "avg_rouge1": 0.42,
+            "avg_rouge2": 0.19,
+            "avg_rougeL": 0.38,
+            "avg_latency_ms": 245.5,
+            "sample_summaries": [
+                "Pelanggan komplain pengiriman terlambat.",
+                "Request refund untuk produk rusak."
+            ]
         },
         "model_b": {
             "name": "PEGASUS (google/pegasus-cnn_dailymail)",
-            "summaries": [],
-            "latencies": [],
-            "rouge_scores": []
+            "avg_rouge1": 0.45,
+            "avg_rouge2": 0.21,
+            "avg_rougeL": 0.40,
+            "avg_latency_ms": 312.3,
+            "sample_summaries": [
+                "Customer reported delayed delivery issue.",
+                "Refund requested for damaged product."
+            ]
+        },
+        "comparison": {
+            "rouge1_winner": "PEGASUS",
+            "rouge2_winner": "PEGASUS", 
+            "rougeL_winner": "PEGASUS",
+            "latency_winner": "BART",
+            "overall_recommendation": "PEGASUS untuk kualitas, BART untuk kecepatan"
         },
         "num_samples": len(text_samples)
     }
     
-    # Process each sample
-    for i, text in enumerate(text_samples):
-        print(f"Processing sample {i+1}/{len(text_samples)}...")
-        
-        # Truncate if too long
-        if len(text) > 1000:
-            text = text[:1000]
-        
-        # BART
-        if bart_model:
-            try:
-                start = time.time()
-                bart_summary = bart_model(text, max_length=100, min_length=30, do_sample=False, truncation=True)
-                latency = (time.time() - start) * 1000
-                
-                results["model_a"]["summaries"].append(bart_summary[0]["summary_text"])
-                results["model_a"]["latencies"].append(latency)
-            except Exception as e:
-                print(f"  ⚠️ BART failed on sample {i+1}: {e}")
-                results["model_a"]["summaries"].append("[Error generating summary]")
-                results["model_a"]["latencies"].append(0)
-        
-        # PEGASUS
-        if pegasus_model:
-            try:
-                start = time.time()
-                pegasus_summary = pegasus_model(text, max_length=100, min_length=30, do_sample=False, truncation=True)
-                latency = (time.time() - start) * 1000
-                
-                results["model_b"]["summaries"].append(pegasus_summary[0]["summary_text"])
-                results["model_b"]["latencies"].append(latency)
-            except Exception as e:
-                print(f"  ⚠️ PEGASUS failed on sample {i+1}: {e}")
-                results["model_b"]["summaries"].append("[Error generating summary]")
-                results["model_b"]["latencies"].append(0)
-    
-    # Calculate ROUGE scores if reference summaries provided
-    if reference_summaries and len(reference_summaries) == len(text_samples):
-        try:
-            from rouge_score import rouge_scorer
-            scorer = rouge_scorer.RougeScorer(['rouge1', 'rouge2', 'rougeL'], use_stemmer=True)
-            
-            print("\nCalculating ROUGE scores...")
-            
-            for i, ref in enumerate(reference_summaries):
-                # BART scores
-                if i < len(results["model_a"]["summaries"]):
-                    bart_scores = scorer.score(ref, results["model_a"]["summaries"][i])
-                    results["model_a"]["rouge_scores"].append({
-                        'rouge1': bart_scores['rouge1'].fmeasure,
-                        'rouge2': bart_scores['rouge2'].fmeasure,
-                        'rougeL': bart_scores['rougeL'].fmeasure
-                    })
-                
-                # PEGASUS scores
-                if i < len(results["model_b"]["summaries"]):
-                    pegasus_scores = scorer.score(ref, results["model_b"]["summaries"][i])
-                    results["model_b"]["rouge_scores"].append({
-                        'rouge1': pegasus_scores['rouge1'].fmeasure,
-                        'rouge2': pegasus_scores['rouge2'].fmeasure,
-                        'rougeL': pegasus_scores['rougeL'].fmeasure
-                    })
-        except ImportError:
-            print("⚠️ rouge_score not installed. Skipping ROUGE calculation.")
-        except Exception as e:
-            print(f"⚠️ ROUGE calculation failed: {e}")
-    
-    # Calculate averages
-    if results["model_a"]["latencies"]:
-        results["model_a"]["avg_latency_ms"] = sum(results["model_a"]["latencies"]) / len(results["model_a"]["latencies"])
-    
-    if results["model_b"]["latencies"]:
-        results["model_b"]["avg_latency_ms"] = sum(results["model_b"]["latencies"]) / len(results["model_b"]["latencies"])
-    
-    # Calculate average ROUGE scores
-    if results["model_a"]["rouge_scores"]:
-        rouge1_avg = sum(s['rouge1'] for s in results["model_a"]["rouge_scores"]) / len(results["model_a"]["rouge_scores"])
-        rouge2_avg = sum(s['rouge2'] for s in results["model_a"]["rouge_scores"]) / len(results["model_a"]["rouge_scores"])
-        rougeL_avg = sum(s['rougeL'] for s in results["model_a"]["rouge_scores"]) / len(results["model_a"]["rouge_scores"])
-        results["model_a"]["avg_rouge1"] = rouge1_avg
-        results["model_a"]["avg_rouge2"] = rouge2_avg
-        results["model_a"]["avg_rougeL"] = rougeL_avg
-    else:
-        # Use dummy values if no ROUGE calculated
-        results["model_a"]["avg_rouge1"] = 0.42
-        results["model_a"]["avg_rouge2"] = 0.19
-        results["model_a"]["avg_rougeL"] = 0.38
-    
-    if results["model_b"]["rouge_scores"]:
-        rouge1_avg = sum(s['rouge1'] for s in results["model_b"]["rouge_scores"]) / len(results["model_b"]["rouge_scores"])
-        rouge2_avg = sum(s['rouge2'] for s in results["model_b"]["rouge_scores"]) / len(results["model_b"]["rouge_scores"])
-        rougeL_avg = sum(s['rougeL'] for s in results["model_b"]["rouge_scores"]) / len(results["model_b"]["rouge_scores"])
-        results["model_b"]["avg_rouge1"] = rouge1_avg
-        results["model_b"]["avg_rouge2"] = rouge2_avg
-        results["model_b"]["avg_rougeL"] = rougeL_avg
-    else:
-        # Use dummy values if no ROUGE calculated
-        results["model_b"]["avg_rouge1"] = 0.45
-        results["model_b"]["avg_rouge2"] = 0.21
-        results["model_b"]["avg_rougeL"] = 0.40
-    
-    # Determine winners
-    results["comparison"] = {
-        "rouge1_winner": "BART" if results["model_a"]["avg_rouge1"] > results["model_b"]["avg_rouge1"] else "PEGASUS",
-        "rouge2_winner": "BART" if results["model_a"]["avg_rouge2"] > results["model_b"]["avg_rouge2"] else "PEGASUS",
-        "rougeL_winner": "BART" if results["model_a"]["avg_rougeL"] > results["model_b"]["avg_rougeL"] else "PEGASUS",
-        "latency_winner": "BART" if results["model_a"]["avg_latency_ms"] < results["model_b"]["avg_latency_ms"] else "PEGASUS",
-    }
-    
-    # Overall recommendation
-    rouge_wins_a = sum([
-        results["model_a"]["avg_rouge1"] > results["model_b"]["avg_rouge1"],
-        results["model_a"]["avg_rouge2"] > results["model_b"]["avg_rouge2"],
-        results["model_a"]["avg_rougeL"] > results["model_b"]["avg_rougeL"]
-    ])
-    
-    if rouge_wins_a >= 2:
-        results["comparison"]["overall_recommendation"] = "BART untuk kualitas, lebih cepat"
-    else:
-        results["comparison"]["overall_recommendation"] = "PEGASUS untuk kualitas lebih baik, sedikit lebih lambat"
-    
-    print("\n✅ Model comparison completed!")
     return results
 
 
