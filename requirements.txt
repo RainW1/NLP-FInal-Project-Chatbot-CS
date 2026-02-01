@@ -1,0 +1,22 @@
+# Web Framework
+streamlit>=1.30.0
+
+# NLP Core
+transformers>=4.35.0
+torch>=2.0.0
+sentencepiece>=0.1.99
+
+# Evaluation Metrics
+rouge-score>=0.1.2
+
+# Audio Processing (Person A)
+openai-whisper>=20231117
+soundfile>=0.12.1
+
+# Vector Store & Embeddings (Person B)
+sentence-transformers>=2.2.0
+faiss-cpu>=1.7.4
+langchain>=0.1.0
+
+# Additional utilities
+python-dotenv>=1.0.0
