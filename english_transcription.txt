@@ -1,0 +1,4 @@
+Test phrase: My order hasn't arrived yet
+Transcription: I want to check my order status.
+Audio bytes: 256000
+Timestamp: 2026-02-01 13:01:52.004818
