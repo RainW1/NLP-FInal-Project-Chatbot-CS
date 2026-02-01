@@ -3,21 +3,24 @@ Person B: Hybrid Chatbot Module (Rules + LLM)
 =============================================
 
 COMPLETE IMPLEMENTATION with:
-- Groq API (Llama3-8B)
+- Groq API (Llama3-8B) - Pre-trained
+- Flan-T5 - Fine-tuned (local)
+- Model switching for comparison
 - Multilingual support (auto-detect language)
 - Conversation memory
 - Rule-based for simple intents
-- RAG context integration
 
 SETUP:
-pip install groq
+pip install groq transformers torch
 
-Get API key: https://console.groq.com
+Get Groq API key: https://console.groq.com
 """
 
 import os
 import random
-from typing import List, Optional, Dict
+import time
+from typing import List, Optional, Dict, Tuple
+from dataclasses import dataclass
 
 # ============================================================
 # IMPORTS
@@ -29,6 +32,13 @@ try:
 except ImportError:
     GROQ_AVAILABLE = False
     print("⚠️ Please install: pip install groq")
+
+try:
+    from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
+    TRANSFORMERS_AVAILABLE = True
+except ImportError:
+    TRANSFORMERS_AVAILABLE = False
+    print("⚠️ Please install: pip install transformers torch")
 
 
 # ============================================================
@@ -64,18 +74,67 @@ class RetrievedDoc:
 # CONFIGURATION
 # ============================================================
 
-# API Key - Set via environment variable or directly here
-GROQ_API_KEY = os.getenv("GROQ_API_KEY", "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")  # <-- Replace!
+# API Key
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "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")
 
-# Model selection
-GROQ_MODEL = "llama-3.1-8b-instant"  # Fast and good quality
+# Model options
+MODELS = {
+    "pretrained": {
+        "name": "llama-3.1-8b-instant",
+        "type": "groq",
+        "description": "Llama 3.1 8B via Groq API (Pre-trained)"
+    },
+    "finetuned": {
+        "name": "google/flan-t5-base",
+        "type": "local",
+        "description": "Flan-T5 Base (Fine-tuned on instructions)"
+    }
+}
+
+# Default model
+CURRENT_MODEL = "pretrained"
 
 # Response settings
 MAX_TOKENS = 500
 TEMPERATURE = 0.7
+MAX_HISTORY_LENGTH = 20
 
-# Memory settings
-MAX_HISTORY_LENGTH = 20  # Keep last 20 messages
+
+# ============================================================
+# MODEL SWITCHING
+# ============================================================
+
+def set_model(model_type: str) -> str:
+    """
+    Switch between models
+    
+    Args:
+        model_type: "pretrained" or "finetuned"
+    
+    Returns:
+        Confirmation message
+    """
+    global CURRENT_MODEL
+    
+    if model_type not in MODELS:
+        return f"❌ Invalid model. Choose: {list(MODELS.keys())}"
+    
+    CURRENT_MODEL = model_type
+    model_info = MODELS[model_type]
+    return f"✅ Switched to {model_type}: {model_info['description']}"
+
+
+def get_current_model() -> Dict:
+    """Get info about current model"""
+    return {
+        "type": CURRENT_MODEL,
+        **MODELS[CURRENT_MODEL]
+    }
+
+
+def list_models() -> Dict:
+    """List all available models"""
+    return MODELS
 
 
 # ============================================================
@@ -90,36 +149,26 @@ class ConversationMemory:
         self.max_length = max_length
     
     def add(self, role: str, content: str):
-        """Add message to history"""
         self.history.append({"role": role, "content": content})
-        
-        # Trim if too long
         if len(self.history) > self.max_length:
             self.history = self.history[-self.max_length:]
     
     def get_history(self, last_n: int = 10) -> List[Dict[str, str]]:
-        """Get last N messages"""
         return self.history[-last_n:]
     
     def clear(self):
-        """Clear all history"""
         self.history = []
     
     def __len__(self):
         return len(self.history)
 
 
-# Global memory instance
 _memory = ConversationMemory()
 
-
 def get_memory() -> ConversationMemory:
-    """Get global memory instance"""
     return _memory
 
-
 def clear_memory():
-    """Clear conversation memory"""
     _memory.clear()
 
 
@@ -128,13 +177,9 @@ def clear_memory():
 # ============================================================
 
 def detect_language(text: str) -> str:
-    """
-    Detect language of input text.
-    Returns: 'id' (Indonesian), 'en' (English), or 'other'
-    """
+    """Detect language: 'id' (Indonesian), 'en' (English), or 'other'"""
     text_lower = text.lower()
     
-    # Indonesian indicators
     id_words = [
         "aku", "saya", "mau", "bisa", "tolong", "terima kasih", "halo",
         "gimana", "bagaimana", "apa", "dimana", "kapan", "sudah", "belum",
@@ -142,7 +187,6 @@ def detect_language(text: str) -> str:
         "pesanan", "barang", "kirim", "sampai", "lama", "refund", "komplain"
     ]
     
-    # English indicators
     en_words = [
         "i", "want", "can", "please", "thank", "hello", "hi", "how",
         "what", "where", "when", "help", "my", "the", "is", "are",
@@ -156,8 +200,7 @@ def detect_language(text: str) -> str:
         return "id"
     elif en_count > id_count:
         return "en"
-    else:
-        return "other"
+    return "other"
 
 
 # ============================================================
@@ -169,53 +212,34 @@ RULE_BASED_RESPONSES = {
         "id": [
             "Halo! 👋 Selamat datang di Customer Service kami. Ada yang bisa saya bantu?",
             "Hi! Terima kasih sudah menghubungi kami. Silakan sampaikan pertanyaan Anda 😊",
-            "Selamat datang! Saya siap membantu Anda. Ada yang bisa saya bantu?",
         ],
         "en": [
             "Hello! 👋 Welcome to our Customer Service. How can I help you today?",
             "Hi! Thank you for contacting us. How can I assist you? 😊",
-            "Welcome! I'm here to help. What can I do for you?",
         ],
-        "other": [
-            "Hello! 👋 How can I help you today?",
-        ]
+        "other": ["Hello! 👋 How can I help you today?"]
     },
     "thanks": {
         "id": [
             "Sama-sama! 😊 Senang bisa membantu. Ada lagi yang bisa saya bantu?",
             "Terima kasih kembali! Jangan ragu hubungi kami lagi ya.",
-            "You're welcome! Semoga harinya menyenangkan 🌟",
         ],
         "en": [
             "You're welcome! 😊 Happy to help. Anything else I can assist with?",
             "No problem! Feel free to reach out again if you need help.",
-            "Glad I could help! Have a great day 🌟",
         ],
-        "other": [
-            "You're welcome! 😊 Anything else I can help with?",
-        ]
+        "other": ["You're welcome! 😊 Anything else I can help with?"]
     },
     "goodbye": {
-        "id": [
-            "Terima kasih sudah menghubungi kami. Sampai jumpa! 👋",
-            "Baik, semoga harinya menyenangkan! Jangan ragu hubungi kami lagi 😊",
-        ],
-        "en": [
-            "Thank you for contacting us. Goodbye! 👋",
-            "Have a great day! Feel free to reach out anytime 😊",
-        ],
-        "other": [
-            "Goodbye! Have a great day! 👋",
-        ]
+        "id": ["Terima kasih sudah menghubungi kami. Sampai jumpa! 👋"],
+        "en": ["Thank you for contacting us. Goodbye! Have a great day! 👋"],
+        "other": ["Goodbye! Have a great day! 👋"]
     },
 }
 
 
 def get_rule_based_response(intent: Intent, language: str) -> Optional[str]:
-    """
-    Get rule-based response if available.
-    Returns None if LLM should handle the query.
-    """
+    """Get rule-based response for simple intents"""
     if intent.label in RULE_BASED_RESPONSES and intent.confidence > 0.85:
         responses = RULE_BASED_RESPONSES[intent.label]
         lang_responses = responses.get(language, responses.get("other", responses.get("en")))
@@ -224,37 +248,147 @@ def get_rule_based_response(intent: Intent, language: str) -> Optional[str]:
 
 
 # ============================================================
-# GROQ LLM INTEGRATION
+# MODEL A: PRE-TRAINED (Groq/Llama)
 # ============================================================
 
 def create_groq_client() -> Optional[Groq]:
-    """Create Groq client with API key"""
-    if not GROQ_AVAILABLE:
-        print("⚠️ Groq not available. Install with: pip install groq")
+    """Create Groq client"""
+    if not GROQ_AVAILABLE or GROQ_API_KEY == "YOUR_API_KEY_HERE":
         return None
-    
-    if GROQ_API_KEY == "YOUR_API_KEY_HERE":
-        print("⚠️ Please set your GROQ_API_KEY!")
-        return None
-    
     return Groq(api_key=GROQ_API_KEY)
 
 
+def generate_groq_response(
+    user_message: str,
+    system_prompt: str,
+    memory: ConversationMemory
+) -> Tuple[str, float]:
+    """Generate response using Groq/Llama (pre-trained)"""
+    
+    client = create_groq_client()
+    if client is None:
+        return "Groq API not configured", 0
+    
+    try:
+        messages = [{"role": "system", "content": system_prompt}]
+        
+        for msg in memory.get_history(last_n=10):
+            messages.append({"role": msg["role"], "content": msg["content"]})
+        
+        messages.append({"role": "user", "content": user_message})
+        
+        start_time = time.time()
+        
+        response = client.chat.completions.create(
+            model=MODELS["pretrained"]["name"],
+            messages=messages,
+            temperature=TEMPERATURE,
+            max_tokens=MAX_TOKENS,
+        )
+        
+        latency = (time.time() - start_time) * 1000
+        return response.choices[0].message.content.strip(), latency
+    
+    except Exception as e:
+        return f"Error: {e}", 0
+
+
+# ============================================================
+# MODEL B: FINE-TUNED (Flan-T5)
+# ============================================================
+
+_finetuned_model = None
+_finetuned_tokenizer = None
+
+def load_finetuned_model():
+    """Load fine-tuned model (singleton)"""
+    global _finetuned_model, _finetuned_tokenizer
+    
+    if _finetuned_model is None:
+        if not TRANSFORMERS_AVAILABLE:
+            raise ImportError("Transformers not available")
+        
+        print(f"🔄 Loading fine-tuned model: {MODELS['finetuned']['name']}...")
+        _finetuned_tokenizer = AutoTokenizer.from_pretrained(MODELS["finetuned"]["name"])
+        _finetuned_model = AutoModelForSeq2SeqLM.from_pretrained(MODELS["finetuned"]["name"])
+        print("✅ Fine-tuned model loaded!")
+    
+    return _finetuned_model, _finetuned_tokenizer
+
+
+def generate_finetuned_response(
+    user_message: str,
+    context: str,
+    memory: ConversationMemory
+) -> Tuple[str, float]:
+    """Generate response using Flan-T5 (fine-tuned)"""
+    
+    if not TRANSFORMERS_AVAILABLE:
+        return "Transformers not available", 0
+    
+    try:
+        model, tokenizer = load_finetuned_model()
+        
+        # Build conversation context
+        history_text = ""
+        for msg in memory.get_history(last_n=4):
+            role = "Customer" if msg["role"] == "user" else "Agent"
+            history_text += f"{role}: {msg['content']}\n"
+        
+        # Format input for Flan-T5
+        input_text = f"""You are a helpful customer service agent. Answer the customer's question based on the context.
+
+Context information:
+{context}
+
+Conversation history:
+{history_text}
+
+Customer: {user_message}
+
+Agent:"""
+
+        start_time = time.time()
+        
+        inputs = tokenizer(input_text, return_tensors="pt", max_length=512, truncation=True)
+        
+        outputs = model.generate(
+            **inputs,
+            max_length=200,
+            num_beams=4,
+            early_stopping=True,
+            do_sample=True,
+            temperature=0.7
+        )
+        
+        response = tokenizer.decode(outputs[0], skip_special_tokens=True)
+        latency = (time.time() - start_time) * 1000
+        
+        return response, latency
+    
+    except Exception as e:
+        return f"Error: {e}", 0
+
+
+# ============================================================
+# SYSTEM PROMPT BUILDER
+# ============================================================
+
 def build_system_prompt(
-    intent: Intent, 
-    entities: Entities, 
+    intent: Intent,
+    entities: Entities,
     retrieved_docs: List[RetrievedDoc],
     language: str
 ) -> str:
-    """Build system prompt with RAG context and entity info"""
+    """Build system prompt with RAG context"""
     
-    # Build context from retrieved documents
+    # Context from RAG
     context_parts = []
     for doc in retrieved_docs:
         context_parts.append(f"[{doc.source}]: {doc.content}")
     context = "\n".join(context_parts) if context_parts else "No specific information available."
     
-    # Build entity info
+    # Entity info
     entity_info = []
     if entities.order_id:
         entity_info.append(f"- Order Number: {entities.order_id}")
@@ -272,102 +406,32 @@ def build_system_prompt(
     system_prompt = f"""You are a friendly and professional e-commerce customer service assistant named "CS Assistant".
 
 ═══════════════════════════════════════════════════════════════
-CRITICAL LANGUAGE INSTRUCTION:
+LANGUAGE INSTRUCTION:
 Always respond in the SAME LANGUAGE as the user's message!
-- User writes Indonesian → Respond in Indonesian
-- User writes English → Respond in English
-- User writes other language → Respond in that language
 Detected language: {language}
 ═══════════════════════════════════════════════════════════════
 
 CONVERSATION MEMORY:
-- You have full memory of this conversation
-- If user refers to "my order", "it", "that" without details → check previous messages
-- NEVER ask for information the user already provided
+- You have memory of this conversation
 - Reference previous context naturally
+- NEVER ask for information the user already provided
 
-KNOWLEDGE BASE INFORMATION:
+KNOWLEDGE BASE:
 {context}
 
-DETECTED ENTITIES (from current message):
+DETECTED ENTITIES:
 {entity_text}
 
-DETECTED INTENT: {intent.label} (confidence: {intent.confidence:.0%})
+INTENT: {intent.label} (confidence: {intent.confidence:.0%})
 
-RESPONSE GUIDELINES:
-1. Be friendly, warm, and professional
-2. Keep responses concise (2-4 sentences max)
-3. Use 1-2 appropriate emojis
-4. Provide clear, actionable solutions
-5. If order number exists, mention it for confirmation
-6. If you don't know something, be honest and offer alternatives
-7. Adapt cultural tone to language (formal for some, casual for Indonesian)
-
-DO NOT:
-- Make up information not in knowledge base
-- Give long, repetitive answers
-- Forget previous context
-- Ask for info already provided"""
+GUIDELINES:
+- Be friendly, warm, and professional
+- Keep responses concise (2-4 sentences)
+- Use 1-2 emojis appropriately
+- Provide clear, actionable solutions
+- If order number exists, mention it for confirmation"""
 
     return system_prompt
-
-
-def generate_llm_response(
-    user_message: str,
-    system_prompt: str,
-    memory: ConversationMemory
-) -> str:
-    """Generate response using Groq LLM with conversation history"""
-    
-    client = create_groq_client()
-    if client is None:
-        return fallback_response(user_message)
-    
-    try:
-        # Build messages array
-        messages = [{"role": "system", "content": system_prompt}]
-        
-        # Add conversation history
-        for msg in memory.get_history(last_n=10):
-            messages.append({
-                "role": msg["role"],
-                "content": msg["content"]
-            })
-        
-        # Add current user message
-        messages.append({"role": "user", "content": user_message})
-        
-        # Call Groq API
-        response = client.chat.completions.create(
-            model=GROQ_MODEL,
-            messages=messages,
-            temperature=TEMPERATURE,
-            max_tokens=MAX_TOKENS,
-        )
-        
-        return response.choices[0].message.content.strip()
-    
-    except Exception as e:
-        print(f"⚠️ Groq API error: {e}")
-        return fallback_response(user_message)
-
-
-def fallback_response(user_message: str) -> str:
-    """Fallback response when LLM is not available"""
-    lang = detect_language(user_message)
-    
-    if lang == "id":
-        return """Mohon maaf, sistem kami sedang mengalami gangguan teknis. 🙏
-
-Silakan coba lagi dalam beberapa saat atau hubungi hotline kami di 021-12345678.
-
-Terima kasih atas kesabarannya."""
-    else:
-        return """We apologize, our system is currently experiencing technical issues. 🙏
-
-Please try again in a few moments or contact our hotline at 021-12345678.
-
-Thank you for your patience."""
 
 
 # ============================================================
@@ -379,53 +443,111 @@ def generate_response(
     intent: Intent,
     entities: Entities,
     retrieved_docs: List[RetrievedDoc],
-    conversation_history: List[Message] = None
+    conversation_history: List[Message] = None,
+    model_type: str = None  # "pretrained" or "finetuned" (None = use current)
 ) -> str:
     """
-    Generates chatbot response using hybrid approach (rules + LLM).
+    Generates chatbot response using selected model.
     
     Features:
+    - Model switching (pretrained vs finetuned)
     - Multilingual (auto-detects and responds in same language)
-    - Conversation memory (remembers context)
-    - Rule-based for simple intents (instant)
-    - LLM with RAG for complex queries
+    - Conversation memory
+    - Rule-based for simple intents
+    - RAG context integration
     
     Args:
         user_message: Current user message
-        intent: Classified intent from classify_intent()
-        entities: Extracted entities from extract_entities()
-        retrieved_docs: Relevant docs from retrieve_knowledge()
-        conversation_history: Previous messages (optional, uses internal memory if not provided)
+        intent: Classified intent
+        entities: Extracted entities
+        retrieved_docs: Relevant docs from RAG
+        conversation_history: Previous messages (optional)
+        model_type: "pretrained" or "finetuned" (optional, uses current if None)
         
     Returns:
         Bot response as string
     """
     
-    # Get memory instance
+    # Use specified model or current default
+    active_model = model_type if model_type else CURRENT_MODEL
+    
+    # Get memory
     memory = get_memory()
     
     # Detect language
     language = detect_language(user_message)
     
-    # Step 1: Try rule-based response for simple intents
+    # Try rule-based response for simple intents
     rule_response = get_rule_based_response(intent, language)
     if rule_response:
-        # Save to memory
         memory.add("user", user_message)
         memory.add("assistant", rule_response)
         return rule_response
     
-    # Step 2: Build system prompt with context
+    # Build context
     system_prompt = build_system_prompt(intent, entities, retrieved_docs, language)
+    context = "\n".join([doc.content for doc in retrieved_docs])
     
-    # Step 3: Generate LLM response
-    response = generate_llm_response(user_message, system_prompt, memory)
+    # Generate response based on selected model
+    if active_model == "pretrained":
+        response, latency = generate_groq_response(user_message, system_prompt, memory)
+    else:
+        response, latency = generate_finetuned_response(user_message, context, memory)
     
-    # Step 4: Save to memory
+    # Save to memory
     memory.add("user", user_message)
     memory.add("assistant", response)
     
     return response
+
+
+def generate_response_with_comparison(
+    user_message: str,
+    intent: Intent,
+    entities: Entities,
+    retrieved_docs: List[RetrievedDoc],
+) -> Dict:
+    """
+    Generate responses from BOTH models for comparison.
+    Useful for demo/presentation.
+    
+    Returns:
+        Dict with both responses and latencies
+    """
+    
+    memory = get_memory()
+    language = detect_language(user_message)
+    
+    # Check rule-based first
+    rule_response = get_rule_based_response(intent, language)
+    if rule_response:
+        return {
+            "pretrained": {"response": rule_response, "latency_ms": 0, "note": "Rule-based"},
+            "finetuned": {"response": rule_response, "latency_ms": 0, "note": "Rule-based"},
+            "is_rule_based": True
+        }
+    
+    # Build prompts
+    system_prompt = build_system_prompt(intent, entities, retrieved_docs, language)
+    context = "\n".join([doc.content for doc in retrieved_docs])
+    
+    # Generate from both models
+    pretrained_resp, pretrained_lat = generate_groq_response(user_message, system_prompt, memory)
+    finetuned_resp, finetuned_lat = generate_finetuned_response(user_message, context, memory)
+    
+    return {
+        "pretrained": {
+            "response": pretrained_resp,
+            "latency_ms": round(pretrained_lat, 2),
+            "model": MODELS["pretrained"]["name"]
+        },
+        "finetuned": {
+            "response": finetuned_resp,
+            "latency_ms": round(finetuned_lat, 2),
+            "model": MODELS["finetuned"]["name"]
+        },
+        "is_rule_based": False
+    }
 
 
 # ============================================================
@@ -433,33 +555,39 @@ def generate_response(
 # ============================================================
 
 def test_groq_connection() -> bool:
-    """Test if Groq API is working"""
+    """Test Groq API connection"""
     client = create_groq_client()
     if client is None:
         return False
     
     try:
         response = client.chat.completions.create(
-            model=GROQ_MODEL,
-            messages=[{"role": "user", "content": "Hi, respond with just 'OK'"}],
+            model=MODELS["pretrained"]["name"],
+            messages=[{"role": "user", "content": "Hi"}],
             max_tokens=10
         )
         return True
-    except Exception as e:
-        print(f"Connection test failed: {e}")
+    except:
         return False
 
 
-def get_conversation_summary() -> str:
-    """Get a summary of current conversation for debugging"""
-    memory = get_memory()
-    return f"Conversation has {len(memory)} messages in memory."
+def test_finetuned_model() -> bool:
+    """Test fine-tuned model loading"""
+    try:
+        load_finetuned_model()
+        return True
+    except:
+        return False
 
 
-def reset_conversation():
-    """Reset conversation (clear memory)"""
-    clear_memory()
-    return "Conversation reset."
+def get_model_status() -> Dict:
+    """Get status of all models"""
+    return {
+        "current_model": CURRENT_MODEL,
+        "pretrained_available": test_groq_connection(),
+        "finetuned_available": TRANSFORMERS_AVAILABLE,
+        "models": MODELS
+    }
 
 
 # ============================================================
@@ -467,84 +595,77 @@ def reset_conversation():
 # ============================================================
 
 if __name__ == "__main__":
-    print("=" * 60)
-    print("Testing Hybrid Chatbot (Multilingual + Memory)")
-    print("=" * 60)
+    print("=" * 70)
+    print("Testing Hybrid Chatbot with Model Switching")
+    print("=" * 70)
     
-    # Clear memory for fresh test
+    # Clear memory
     clear_memory()
     
-    # Test 1: Indonesian greeting
-    print("\n🧪 Test 1: Indonesian Greeting")
-    response = generate_response(
-        user_message="Halo selamat pagi",
-        intent=Intent(label="greeting", confidence=0.95),
-        entities=Entities(),
-        retrieved_docs=[],
+    # Show available models
+    print("\n📋 Available Models:")
+    for key, info in MODELS.items():
+        print(f"   {key}: {info['description']}")
+    
+    print(f"\n🎯 Current model: {CURRENT_MODEL}")
+    
+    # Test case
+    test_message = "My order ORDER123 hasn't arrived yet. It's been 5 days."
+    test_intent = Intent(label="complaint_delivery", confidence=0.88)
+    test_entities = Entities(order_id="ORDER123", date="5 days")
+    test_docs = [
+        RetrievedDoc(
+            content="Standard shipping takes 3-5 business days for domestic orders.",
+            source="shipping_policy",
+            relevance=0.85
+        ),
+        RetrievedDoc(
+            content="If your order hasn't arrived, please contact customer service with your order number.",
+            source="faq",
+            relevance=0.80
+        )
+    ]
+    
+    # Test with both models
+    print("\n" + "=" * 70)
+    print("📝 Test: " + test_message)
+    print("=" * 70)
+    
+    # Pre-trained
+    print("\n🅰️ PRE-TRAINED (Llama-3.1-8B):")
+    set_model("pretrained")
+    response = generate_response(test_message, test_intent, test_entities, test_docs)
+    print(f"   {response}")
+    
+    # Fine-tuned
+    print("\n🅱️ FINE-TUNED (Flan-T5):")
+    set_model("finetuned")
+    clear_memory()  # Clear memory for fair comparison
+    response = generate_response(test_message, test_intent, test_entities, test_docs)
+    print(f"   {response}")
+    
+    # Test comparison function
+    print("\n" + "=" * 70)
+    print("📊 Side-by-side Comparison:")
+    print("=" * 70)
+    
+    clear_memory()
+    comparison = generate_response_with_comparison(
+        test_message, test_intent, test_entities, test_docs
     )
-    print(f"User: Halo selamat pagi")
-    print(f"Bot: {response}")
     
-    # Test 2: Indonesian complaint
-    print("\n🧪 Test 2: Indonesian Complaint")
-    response = generate_response(
-        user_message="Pesanan ORDER123 saya belum sampai sudah 5 hari",
-        intent=Intent(label="complaint_delivery", confidence=0.88),
-        entities=Entities(order_id="ORDER123", date="5 hari"),
-        retrieved_docs=[
-            RetrievedDoc(
-                content="Pengiriman standar membutuhkan 3-5 hari kerja untuk Pulau Jawa.",
-                source="shipping_policy",
-                relevance=0.85
-            )
-        ],
-    )
-    print(f"User: Pesanan ORDER123 saya belum sampai sudah 5 hari")
-    print(f"Bot: {response}")
+    print(f"\n🅰️ Pre-trained ({comparison['pretrained']['latency_ms']}ms):")
+    print(f"   {comparison['pretrained']['response']}")
     
-    # Test 3: Follow-up (test memory)
-    print("\n🧪 Test 3: Follow-up (Testing Memory)")
-    response = generate_response(
-        user_message="Terus gimana solusinya?",
-        intent=Intent(label="other", confidence=0.70),
-        entities=Entities(),
-        retrieved_docs=[
-            RetrievedDoc(
-                content="Jika pesanan belum sampai, silakan hubungi CS dengan nomor pesanan.",
-                source="faq",
-                relevance=0.80
-            )
-        ],
-    )
-    print(f"User: Terus gimana solusinya?")
-    print(f"Bot: {response}")
+    print(f"\n🅱️ Fine-tuned ({comparison['finetuned']['latency_ms']}ms):")
+    print(f"   {comparison['finetuned']['response']}")
     
-    # Test 4: English query
-    print("\n🧪 Test 4: English Query")
-    response = generate_response(
-        user_message="How can I get a refund for my damaged product?",
-        intent=Intent(label="return_refund", confidence=0.90),
-        entities=Entities(),
-        retrieved_docs=[
-            RetrievedDoc(
-                content="Return/refund can be requested within 7 days after receiving the product.",
-                source="return_policy",
-                relevance=0.90
-            )
-        ],
-    )
-    print(f"User: How can I get a refund for my damaged product?")
-    print(f"Bot: {response}")
+    # Model status
+    print("\n" + "=" * 70)
+    print("📊 Model Status:")
+    status = get_model_status()
+    print(f"   Current: {status['current_model']}")
+    print(f"   Groq API: {'✅' if status['pretrained_available'] else '❌'}")
+    print(f"   Transformers: {'✅' if status['finetuned_available'] else '❌'}")
     
-    # Check memory
-    print(f"\n📊 {get_conversation_summary()}")
-    
-    # Test connection
-    print("\n🔌 Testing Groq Connection...")
-    if test_groq_connection():
-        print("✅ Groq API connected!")
-    else:
-        print("❌ Groq API connection failed.")
-    
-    print("\n" + "=" * 60)
-    print("Testing complete!")
+    print("\n✅ Testing complete!")
