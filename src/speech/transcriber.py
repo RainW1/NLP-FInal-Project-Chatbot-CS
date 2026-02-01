@@ -18,12 +18,7 @@ pip install openai-whisper sounddevice numpy
 NOTE: Whisper model will download on first run (~1.5GB for 'base')
 """
 
-import whisper
 import numpy as np
-import sounddevice as sd
-import tempfile
-import os
-import wave
 from typing import Optional
 
 # ============================================================
@@ -56,6 +51,7 @@ def transcribe_audio(audio_bytes: bytes) -> str:
         return result["text"].strip()
     ```
     """
+<<<<<<< HEAD
     try:
         print("[Whisper] Loading model for English transcription...")
         
@@ -158,6 +154,11 @@ def transcribe_audio(audio_bytes: bytes) -> str:
         print(f"[ERROR] English transcription failed: {str(e)}")
         # Return empty string as fallback
         return ""
+=======
+    # STUB - Remove this and implement real code
+    return "Halo, pesanan saya ORDER123 belum sampai sudah 5 hari, tolong dicek dong"
+
+>>>>>>> parent of cd924e0 (Person A: Speech Transcription Module)
 
 def record_from_microphone(duration: int = 10, sample_rate: int = 16000) -> bytes:
     """
@@ -186,6 +187,7 @@ def record_from_microphone(duration: int = 10, sample_rate: int = 16000) -> byte
         return audio.tobytes()
     ```
     """
+<<<<<<< HEAD
     try:
         print(f"[Recording] Starting {duration}-second recording...")
         print("🎤 Please speak in English (e-commerce related)")
@@ -238,6 +240,10 @@ def record_from_microphone(duration: int = 10, sample_rate: int = 16000) -> byte
         print("   2. Grant microphone permissions")
         print("   3. Try different audio device")
         return b""  # Return empty bytes on error
+=======
+    # STUB - Remove this and implement real code
+    return b"dummy_audio_bytes"
+>>>>>>> parent of cd924e0 (Person A: Speech Transcription Module)
 
 
 # ============================================================
@@ -256,6 +262,7 @@ def process_uploaded_audio(uploaded_file) -> str:
         
     TODO (Person A): Implement this for Streamlit file upload
     """
+<<<<<<< HEAD
     try:
         # Check if pydub is available for format conversion
         try:
@@ -293,6 +300,10 @@ def process_uploaded_audio(uploaded_file) -> str:
     except Exception as e:
         print(f"[ERROR] Audio upload processing failed: {str(e)}")
         return ""
+=======
+    # STUB
+    return "Pesanan ORDER456 saya rusak, minta refund"
+>>>>>>> parent of cd924e0 (Person A: Speech Transcription Module)
 
 
 # ============================================================
@@ -311,6 +322,7 @@ if __name__ == "__main__":
     print(f"Audio bytes length: {len(audio)}")
     
     print("\n✅ Stubs working! Ready for real implementation.")
+<<<<<<< HEAD
 
 # ============================================================
 # TESTING FUNCTIONS
@@ -450,3 +462,5 @@ if __name__ == "__main__":
     print("ALL TESTS COMPLETED!")
     print("✅" * 20)
     print("\n🎉 English Speech-to-Text module is ready!")
+=======
+>>>>>>> parent of cd924e0 (Person A: Speech Transcription Module)
